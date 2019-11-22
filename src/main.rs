@@ -3,16 +3,18 @@ use canteen::*;
 use canteen::utils;
 use nix::ifaddrs::getifaddrs;
 use nix::sys::socket::SockAddr;
-use qrcode::QrCode;
+use qr2term::print_qr;
 use std::thread::spawn;
 
 const UPLOAD_FORM: &str = r##"
 </head>
 <body>
     <form id="uploadbanner" enctype="multipart/form-data" method="post" action="#">
-        <textarea rows="8" cols="80" name="address" id="address"></textarea>
+        <textarea rows="8" cols="60" name="address"></textarea>
+        <br/>
         <input name="file" type="file" />
-        <input type="submit" value="submit" id="submit" />
+        <br/>
+        <input type="submit" value="submit" />
     </form>
 </body>
 "##;
@@ -55,8 +57,8 @@ fn handle_upload(req: &Request) -> Response {
     let body = String::from_utf8_lossy(&req.payload);
 
     let marker = body.split("\r\n").next().unwrap();
-    let marker_split = format!("{}\r\n", marker);
-    let marker_end = format!("{}--\r\n", marker);
+    let marker_split = format!("\r\n{}\r\n", marker);
+    let marker_end = format!("\r\n{}--\r\n", marker);
     let parts = body
         .trim_end_matches(&marker_end).split(&marker_split).filter(|s| !s.is_empty())
         .map(|p| {
@@ -68,7 +70,7 @@ fn handle_upload(req: &Request) -> Response {
         .flat_map(|(_head, body)| body);
 
     for body in parts {
-        println!("{}", body);
+        println!("{}", dbg![body]);
     }
 
     res.set_status(200);
@@ -76,14 +78,6 @@ fn handle_upload(req: &Request) -> Response {
     res.append(THANK_YOU);
 
     res
-}
-
-fn qr(bytes: &[u8]) -> Result<String> {
-    let code = QrCode::new(bytes)?;
-    Ok(code.render::<char>()
-        //.quiet_zone(false)
-        .module_dimensions(2, 1)
-        .build())
 }
 
 fn main() -> FinalResult {
@@ -110,8 +104,9 @@ fn main() -> FinalResult {
         let url = format!("http://{}:{}/", addr, port);
         eprintln!("URL: {}", url);
 
-        let code = qr(url.as_bytes())?;
-        eprintln!("{}", code);
+        //TODO: this prints to stdout and I need stderr so stdout can be redirected
+        print_qr(&url)?;
+        eprintln!();
 
         thread = Some(spawn(move || {
             let mut cnt = Canteen::new();
