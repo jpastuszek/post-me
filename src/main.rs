@@ -1,23 +1,33 @@
 use cotton::prelude::*;
-use canteen::*;
-use canteen::utils;
 use nix::ifaddrs::getifaddrs;
 use nix::sys::socket::SockAddr;
 use qr2term::print_qr;
-use std::thread::spawn;
+use async_std::task;
+use tide::{Request, Response};
+use http_types::{mime, StatusCode};
+use serde::Deserialize;
+
+// for application/x-www-form-urlencoded
+#[derive(Debug, Deserialize)]
+struct Form {
+    message: String,
+}
 
 const UPLOAD_FORM: &str = r##"
 </head>
 <body>
     <form id="uploadbanner" enctype="multipart/form-data" method="post" action="#">
-        <textarea rows="8" cols="60" name="address"></textarea>
+        <textarea rows="8" cols="60" name="message"></textarea>
         <br/>
-        <input name="file" type="file" />
-        <br/>
-        <input type="submit" value="submit" />
+        <input type="submit" value="submit" formenctype="application/x-www-form-urlencoded" />
     </form>
 </body>
 "##;
+
+//TODO: try https://docs.rs/formdata/0.13.0/formdata/ to parse for file support
+
+// <input name="file" type="file" />
+// <br/>
 
 const THANK_YOU: &str = r##"
 </head>
@@ -41,43 +51,30 @@ struct Cli {
     port: u16,
 }
 
-fn upload_form(_req: &Request) -> Response {
-    let mut res = Response::new();
-
-    res.set_status(200);
-    res.set_content_type("text/html");
-    res.append(UPLOAD_FORM);
-
-    res
+async fn error_not_found(_req: Request<()>) -> tide::Result {
+    Ok(Response::builder(StatusCode::NotFound)
+        .body("Not found!")
+        .content_type(mime::PLAIN)
+        .build())
 }
 
-fn handle_upload(req: &Request) -> Response {
-    let mut res = Response::new();
+async fn upload_form(_req: Request<()>) -> tide::Result {
+    Ok(Response::builder(200)
+        .body(UPLOAD_FORM)
+        .content_type(mime::HTML)
+        .build())
+}
 
-    let body = String::from_utf8_lossy(&req.payload);
+async fn handle_upload(mut req: Request<()>) -> tide::Result {
+    //dbg![&req.body_string().await];
 
-    let marker = body.split("\r\n").next().unwrap();
-    let marker_split = format!("\r\n{}\r\n", marker);
-    let marker_end = format!("\r\n{}--\r\n", marker);
-    let parts = body
-        .trim_end_matches(&marker_end).split(&marker_split).filter(|s| !s.is_empty())
-        .map(|p| {
-            let mut head_body = p.split("\r\n\r\n");
-            let head = head_body.next().unwrap();
-            let body = head_body.next().filter(|b| !b.trim().is_empty()).map(|b| b.replace("\r\n", "\n"));
-            (head, body)
-        })
-        .flat_map(|(_head, body)| body);
+    let form: Form = req.body_form().await?;
+    println!("{}", form.message);
 
-    for body in parts {
-        println!("{}", dbg![body]);
-    }
-
-    res.set_status(200);
-    res.set_content_type("text/html");
-    res.append(THANK_YOU);
-
-    res
+    Ok(Response::builder(200)
+        .body(THANK_YOU)
+        .content_type(mime::HTML)
+        .build())
 }
 
 fn main() -> FinalResult {
@@ -108,23 +105,18 @@ fn main() -> FinalResult {
         print_qr(&url)?;
         eprintln!();
 
-        thread = Some(spawn(move || {
-            let mut cnt = Canteen::new();
+        thread = Some(task::spawn(async move {
+            let mut app = tide::new();
 
-            // bind to the listening address
-            cnt.bind((addr, port));
+            app.at("/").get(upload_form);
+            app.at("/").post(handle_upload);
+            app.at("*").all(error_not_found);
 
-            // set the default route handler to show a 404 message
-            cnt.set_default(utils::err_404);
-
-            cnt.add_route("/", &[Method::Get], upload_form);
-            cnt.add_route("/", &[Method::Post], handle_upload);
-
-            cnt.run();
+            app.listen((addr.to_string(), port)).await
         }));
     }
 
-    thread.map(|t| t.join());
+    thread.map(|t| task::block_on(t).or_failed_to("bind server"));
 
     error!("No non-local IPs to bind to found!");
 
