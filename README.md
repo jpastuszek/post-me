@@ -22,3 +22,9 @@ TODO
 Not planned:
 * Firewall punching
 * Relays
+
+
+See also
+--------
+
+* [qrcp](https://github.com/claudiodangelis/qrcp) - basically what I wanted to bulid here but ready and in Go!
