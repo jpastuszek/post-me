@@ -120,6 +120,12 @@ fn main() -> FinalResult {
         print_qr(&url)?;
         eprintln!();
 
+        let addr = addr.to_string();
+        let cert = generate_simple_self_signed(vec![addr.clone()]).or_failed_to("Generate self-signed certificate");
+        let cert_der = Certificate(cert.serialize_der().unwrap());
+        let key_pair_der = PrivateKey(cert.get_key_pair().serialize_der());
+        let mut config = ServerConfig::new(Arc::new(NoClientAuth));
+
         thread = Some(task::spawn(async move {
             let mut app = tide::new();
 
@@ -130,11 +136,6 @@ fn main() -> FinalResult {
             if insecure {
                 app.listen((addr.to_string(), port)).await
             } else {
-                let addr = addr.to_string();
-                let cert = generate_simple_self_signed(vec![addr.clone()]).or_failed_to("Generate self-signed certificate");
-                let cert_der = Certificate(cert.serialize_der().unwrap());
-                let key_pair_der = PrivateKey(cert.get_key_pair().serialize_der());
-                let mut config = ServerConfig::new(Arc::new(NoClientAuth));
                 config.set_single_cert(vec![cert_der], key_pair_der).unwrap();
 
                 app.listen(
