@@ -20,9 +20,9 @@ struct Form {
 const UPLOAD_FORM: &str = r##" </head>
 <body>
     <form id="uploadbanner" enctype="multipart/form-data" method="post" action="#">
-        <textarea rows="8" cols="60" name="message"></textarea>
+        <textarea rows="8" cols="60" name="message" style="width: 100%;font-size: 24;height: 80%;"></textarea>
         <br/>
-        <input type="submit" value="submit" formenctype="application/x-www-form-urlencoded" />
+        <input type="submit" value="submit" formenctype="application/x-www-form-urlencoded" style="font-size: 40;width: 100%;height: 3em;" />
     </form>
 </body>
 "##;
