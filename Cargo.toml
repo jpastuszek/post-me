@@ -14,3 +14,6 @@ tide = "0.16.0"
 async-std = "1.9.0"
 http-types = "2.10.0"
 serde = { version = "1.0.123", features = ["derive"] }
+tide-rustls = "0.3.0"
+rustls = "0.19.1"
+rcgen = "0.8.11"

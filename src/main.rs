@@ -6,6 +6,10 @@ use async_std::task;
 use tide::{Request, Response};
 use http_types::{mime, StatusCode};
 use serde::Deserialize;
+use tide_rustls::TlsListener;
+use rustls::{ServerConfig, NoClientAuth, Certificate, PrivateKey};
+use std::sync::Arc;
+use rcgen::generate_simple_self_signed;
 
 // for application/x-www-form-urlencoded
 #[derive(Debug, Deserialize)]
@@ -13,8 +17,7 @@ struct Form {
     message: String,
 }
 
-const UPLOAD_FORM: &str = r##"
-</head>
+const UPLOAD_FORM: &str = r##" </head>
 <body>
     <form id="uploadbanner" enctype="multipart/form-data" method="post" action="#">
         <textarea rows="8" cols="60" name="message"></textarea>
@@ -45,6 +48,10 @@ struct Cli {
 
     #[structopt(flatten)]
     dry_run: DryRunOpt,
+
+    /// Does not use TLS
+    #[structopt(short = "i", long)]
+    insecure: bool,
 
     /// Listen on this port
     #[structopt(short, long, default_value = "16333")]
@@ -94,11 +101,19 @@ fn main() -> FinalResult {
 
     let mut thread = None;
     let port = args.port;
+    let insecure = args.insecure;
 
     for addr in inet_addresses {
         info!("Found address: {:?}", addr);
 
-        let url = format!("http://{}:{}/", addr, port);
+        let scheme = if insecure {
+            "http"
+        } else {
+            "https"
+        };
+
+        let url = format!("{}://{}:{}/", scheme, addr, port);
+
         eprintln!("URL: {}", url);
 
         //TODO: this prints to stdout and I need stderr so stdout can be redirected
@@ -112,7 +127,24 @@ fn main() -> FinalResult {
             app.at("/").post(handle_upload);
             app.at("*").all(error_not_found);
 
-            app.listen((addr.to_string(), port)).await
+            if insecure {
+                app.listen((addr.to_string(), port)).await
+            } else {
+                let addr = addr.to_string();
+                let cert = generate_simple_self_signed(vec![addr.clone()]).or_failed_to("Generate self-signed certificate");
+                let cert_der = Certificate(cert.serialize_der().unwrap());
+                let key_pair_der = PrivateKey(cert.get_key_pair().serialize_der());
+                let mut config = ServerConfig::new(Arc::new(NoClientAuth));
+                config.set_single_cert(vec![cert_der], key_pair_der).unwrap();
+
+                app.listen(
+                    TlsListener::build()
+                    .addrs((addr, port))
+                    .config(config)
+                    // .cert(std::env::var("TIDE_CERT_PATH").unwrap())
+                    // .key(std::env::var("TIDE_KEY_PATH").unwrap()),
+                ).await
+            }
         }));
     }
 
